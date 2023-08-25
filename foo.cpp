@@ -18,8 +18,12 @@
     grids[0].define(domain);
     grids[0].maxSize(max_grid_size);
 
+    // 8 is somewhat arbitrary, but a good default for CPU. Could be bigger for GPU.
+    const int blocking_factor = std::min(8, max_grid_size);
+    BoxList bl_fine;
+
     // defining grids for the remaining levels
-    for (int ilev = 1; ilev < nlevels; ++ilev) {        
+    for (int ilev = nlevels-1; ilev >= 1; --ilev) {
 
         // We place the blocks/Boxes of level ilev in a BoxList dlist
         BoxList dlist;
@@ -56,9 +60,24 @@
                 dlist.push_back(domain);
             }
         }
+
+        if (ilev < nlevels-1) {
+            bl_fine.accrete(blocking_factor).coarsen(ref_ratio);
+            dlist.join(bl_fine);
+            dlist.coarsen(blocking_factor);
+            dlist = amrex::removeOverlap(dlist);
+            dlist.refine(blocking_factor);
+        }
+
+        // Make sure all Boxes are contained inside the domain
+        dlist.intersect(geom[ilev].Domain());
         
+        if (ilev > 1) {
+            bl_fine = dlist; // save BoxList before maxSize for next coarse level
+        }
+
         // Define the grid in terms of the BoxList dlist
-        grids[ilev].define(dlist);
+        grids[ilev].define(std::move(dlist));
         grids[ilev].maxSize(max_grid_size);
 
     }
